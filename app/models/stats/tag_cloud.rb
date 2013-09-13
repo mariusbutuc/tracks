@@ -7,20 +7,18 @@ class TagCloud
   attr_reader :user, :cut_off,
               :tags, :min, :divisor,
               :tags_90days, :min_90days, :divisor_90days
-  def initialize(user, cut_off)
+
+  def initialize(user, cut_off = nil)
     @user             = user
     @cut_off  = cut_off
   end
 
   def compute
-
     levels = 10
-    params = [
-      sql, user.id
-    ]
-    @tags = Tag.find_by_sql(params).sort_by { |tag|
-      tag.name.downcase
-    }
+
+    params = [ sql(@cut_off), user.id ]
+    params += [ @cut_off, @cut_off ] if @cut_off
+    @tags = Tag.find_by_sql(params).sort_by { |tag| tag.name.downcase }
 
     max, @min = 0, 0
     @tags.each { |t|
@@ -29,21 +27,6 @@ class TagCloud
     }
 
     @divisor = ((max - @min) / levels) + 1
-
-    params = [
-      sql(@cut_off), user.id, @cut_off, @cut_off
-    ]
-    @tags_90days = Tag.find_by_sql(params).sort_by { |tag|
-      tag.name.downcase
-    }
-
-    max_90days, @min_90days = 0, 0
-    @tags_90days.each { |t|
-      max_90days = [t.count.to_i, max_90days].max
-      @min_90days = [t.count.to_i, @min_90days].min
-    }
-
-    @divisor_90days = ((max_90days - @min_90days) / levels) + 1
   end
 
 private
