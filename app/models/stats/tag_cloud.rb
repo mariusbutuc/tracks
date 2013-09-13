@@ -21,12 +21,8 @@ class TagCloud
     @tags
   end
 
-  def divisor
-    @divisor ||= ((max - min) / levels) + 1
-  end
-
-  def min
-    0
+  def relative_size(tag)
+    (tag.count.to_i - min) / divisor
   end
 
 private
@@ -56,6 +52,14 @@ private
 
   def tag_counts
     @tag_counts ||= tags.map { |t| t.count.to_i }
+  end
+
+  def divisor
+    @divisor ||= ((max - min) / levels) + 1
+  end
+
+  def min
+    0
   end
 
   def max
