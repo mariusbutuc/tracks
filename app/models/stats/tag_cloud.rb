@@ -15,16 +15,13 @@ class TagCloud
     # TODO: parameterize limit
 
     # Get the tag cloud for all tags for actions
-    query = "SELECT tags.id, name, count(*) AS count"
-    query << " FROM taggings, tags, todos"
-    query << " WHERE tags.id = tag_id"
-    query << " AND taggings.taggable_id = todos.id"
-    query << " AND todos.user_id="+current_user.id.to_s+" "
-    query << " AND taggings.taggable_type='Todo' "
-    query << " GROUP BY tags.id, tags.name"
-    query << " ORDER BY count DESC, name"
-    query << " LIMIT 100"
-    @tags_for_cloud = Tag.find_by_sql(query).sort_by { |tag| tag.name.downcase }
+    params = [
+      sql,
+      current_user.id
+    ]
+    @tags_for_cloud = Tag.find_by_sql(params).sort_by { |tag|
+      tag.name.downcase
+    }
 
     max, @tags_min = 0, 0
     @tags_for_cloud.each { |t|
@@ -35,9 +32,15 @@ class TagCloud
     @tags_divisor = ((max - @tags_min) / levels) + 1
 
     # Get the tag cloud for all tags for actions
-    @tags_for_cloud_90days = Tag.find_by_sql(
-      [sql_90days, current_user.id, @cut_off_3months, @cut_off_3months]
-    ).sort_by { |tag| tag.name.downcase }
+    params = [
+      sql(@cut_off_3months),
+      current_user.id,
+      @cut_off_3months,
+      @cut_off_3months
+    ]
+    @tags_for_cloud_90days = Tag.find_by_sql(params).sort_by { |tag|
+      tag.name.downcase
+    }
 
     max_90days, @tags_min_90days = 0, 0
     @tags_for_cloud_90days.each { |t|
@@ -50,21 +53,26 @@ class TagCloud
 
 private
 
-  def sql_90days
-    sql = <<-SQL
+  def sql(cut_off = nil)
+    raw_sql = <<-SQL
       SELECT tags.id, tags.name AS name, count(*) AS count
         FROM taggings, tags, todos
         WHERE tags.id = tag_id
+        AND taggings.taggable_id=todos.id
         AND todos.user_id=?
         AND taggings.taggable_type='Todo'
-        AND taggings.taggable_id=todos.id
-        AND (todos.created_at > ? OR
-             todos.completed_at > ?)
+
+        #{timebox_todos(cut_off)}
+
         GROUP BY tags.id, tags.name
         ORDER BY count DESC, name
         LIMIT 100
      SQL
 
-     sql.squish
+     raw_sql.squish
+  end
+
+  def timebox_todos(cut_off)
+    cut_off ? 'AND (todos.created_at > ? OR todos.completed_at > ?)' : ''
   end
 end
