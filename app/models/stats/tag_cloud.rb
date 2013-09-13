@@ -4,29 +4,25 @@ class TagCloud
     #
     # TODO: parameterize limit
 
-  attr_reader :user, :cut_off,
-              :tags, :min, :divisor,
-              :tags_90days, :min_90days, :divisor_90days
+  attr_reader :user, :cut_off, :divisor
 
   def initialize(user, cut_off = nil)
-    @user             = user
+    @user     = user
     @cut_off  = cut_off
   end
 
-  def compute
-    levels = 10
+  def tags
+    unless @tags
+      params = [ sql(@cut_off), user.id ]
+      params += [ @cut_off, @cut_off ] if @cut_off
+      @tags = Tag.find_by_sql(params).sort_by { |tag| tag.name.downcase }
+    end
 
-    params = [ sql(@cut_off), user.id ]
-    params += [ @cut_off, @cut_off ] if @cut_off
-    @tags = Tag.find_by_sql(params).sort_by { |tag| tag.name.downcase }
+    @tags
+  end
 
-    max, @min = 0, 0
-    @tags.each { |t|
-      max = [t.count.to_i, max].max
-      @min = [t.count.to_i, @min].min
-    }
-
-    @divisor = ((max - @min) / levels) + 1
+  def relative_size(tag)
+    (tag.count.to_i - min) / divisor
   end
 
 private
@@ -52,5 +48,25 @@ private
 
   def timebox_todos(cut_off)
     cut_off ? 'AND (todos.created_at > ? OR todos.completed_at > ?)' : ''
+  end
+
+  def tag_counts
+    @tag_counts ||= tags.map { |t| t.count.to_i }
+  end
+
+  def divisor
+    @divisor ||= ((max - min) / levels) + 1
+  end
+
+  def min
+    0
+  end
+
+  def max
+    tag_counts.max
+  end
+
+  def levels
+    10
   end
 end
