@@ -18,7 +18,7 @@ class StatsController < ApplicationController
     get_stats_projects
     get_stats_tags
   end
-  
+
   def actions_done_last12months_data
     # get actions created and completed in the past 12+3 months. +3 for running
     #   average
@@ -32,7 +32,7 @@ class StatsController < ApplicationController
     @actions_created_last12months_array = convert_to_months_from_today_array(@actions_created_last12months, 13, :created_at)
     @actions_done_last12monthsPlus3_array = convert_to_months_from_today_array(@actions_done_last12monthsPlus3, 16, :completed_at)
     @actions_created_last12monthsPlus3_array = convert_to_months_from_today_array(@actions_created_last12monthsPlus3, 16, :created_at)
-    
+
     # find max for graph in both arrays
     @max = [@actions_done_last12months_array.max, @actions_created_last12months_array.max].max
 
@@ -106,10 +106,10 @@ class StatsController < ApplicationController
     # convert to array and fill in non-existing weeks with 0
     @max_weeks = @actions_completion_time.last ? difference_in_weeks(@today, @actions_completion_time.last.completed_at) : 1
     @actions_completed_per_week_array = convert_to_weeks_running_array(@actions_completion_time, @max_weeks+1)
-        
+
     # stop the chart after 10 weeks
     @count = [10, @max_weeks].min
-    
+
     # convert to new array to hold max @cut_off elems + 1 for sum of actions after @cut_off
     @actions_completion_time_array = cut_off_array_with_sum(@actions_completed_per_week_array, @count)
     @max_actions = @actions_completion_time_array.max
@@ -129,14 +129,14 @@ class StatsController < ApplicationController
 
     # cut off chart at 52 weeks = one year
     @count = [52, @max_weeks].min
-    
+
     # convert to new array to hold max @cut_off elems + 1 for sum of actions after @cut_off
     @actions_running_time_array = cut_off_array_with_sum(@actions_running_per_week_array, @count)
     @max_actions = @actions_running_time_array.max
 
     # get percentage done cumulative
     @cum_percent_done = convert_to_cumulative_array(@actions_running_time_array, @actions_running_time.count )
-      
+
     render :layout => false
   end
 
@@ -158,7 +158,7 @@ class StatsController < ApplicationController
 
     # cut off chart at 52 weeks = one year
     @count = [52, @max_weeks].min
-    
+
     # convert to new array to hold max @cut_off elems + 1 for sum of actions after @cut_off
     @actions_running_time_array = cut_off_array_with_sum(@actions_running_per_week_array, @count)
     @max_actions = @actions_running_time_array.max
@@ -168,21 +168,21 @@ class StatsController < ApplicationController
 
     render :layout => false
   end
-  
+
   def actions_open_per_week_data
     @actions_started = current_user.todos.created_after(@today-53.weeks).
       select("todos.created_at, todos.completed_at").
       reorder("todos.created_at DESC")
-      
+
     @max_weeks = difference_in_weeks(@today, @actions_started.last.created_at)
 
     # cut off chart at 52 weeks = one year
     @count = [52, @max_weeks].min
-    
+
     @actions_open_per_week_array = convert_to_weeks_running_from_today_array(@actions_started, @max_weeks+1)
     @actions_open_per_week_array = cut_off_array(@actions_open_per_week_array, @count)
     @max_actions = (@actions_open_per_week_array.max or 0)
-    
+
     render :layout => false
   end
 
@@ -350,7 +350,7 @@ class StatsController < ApplicationController
       selected_todo_ids = get_ids_from(@actions_running_time, week_from, week_to, params['id']=='art_end')
       @selected_actions = selected_todo_ids.size == 0 ? [] : current_user.todos.where("id in (#{selected_todo_ids.join(",")})")
       @count = @selected_actions.size
-      
+
       render :action => "show_selection_from_chart"
     else
       # render error
@@ -443,7 +443,7 @@ class StatsController < ApplicationController
 
     actions_sum, actions_max = 0,0
     actions_min = @completed_actions.first ? @completed_actions.first.completed_at - @completed_actions.first.created_at : 0
-    
+
     @completed_actions.each do |r|
       actions_sum += (r.completed_at - r.created_at)
       actions_max = [(r.completed_at - r.created_at), actions_max].max
@@ -552,55 +552,16 @@ class StatsController < ApplicationController
   end
 
   def get_stats_tags
-    # tag cloud code inspired by this article
-    #  http://www.juixe.com/techknow/index.php/2006/07/15/acts-as-taggable-tag-cloud/
+    cloud = TagCloud.new(current_user, @cut_off_3months)
+    cloud.compute
 
-    levels=10
-    # TODO: parameterize limit
+    @tags_for_cloud         = cloud.tags_for_cloud
+    @tags_min               = cloud.tags_min
+    @tags_divisor           = cloud.tags_divisor
 
-    # Get the tag cloud for all tags for actions
-    query = "SELECT tags.id, name, count(*) AS count"
-    query << " FROM taggings, tags, todos"
-    query << " WHERE tags.id = tag_id"
-    query << " AND taggings.taggable_id = todos.id"
-    query << " AND todos.user_id="+current_user.id.to_s+" "
-    query << " AND taggings.taggable_type='Todo' "
-    query << " GROUP BY tags.id, tags.name"
-    query << " ORDER BY count DESC, name"
-    query << " LIMIT 100"
-    @tags_for_cloud = Tag.find_by_sql(query).sort_by { |tag| tag.name.downcase }
-
-    max, @tags_min = 0, 0
-    @tags_for_cloud.each { |t|
-      max = [t.count.to_i, max].max
-      @tags_min = [t.count.to_i, @tags_min].min
-    }
-
-    @tags_divisor = ((max - @tags_min) / levels) + 1
-
-    # Get the tag cloud for all tags for actions
-    query = "SELECT tags.id, tags.name AS name, count(*) AS count"
-    query << " FROM taggings, tags, todos"
-    query << " WHERE tags.id = tag_id"
-    query << " AND todos.user_id=? "
-    query << " AND taggings.taggable_type='Todo' "
-    query << " AND taggings.taggable_id=todos.id "
-    query << " AND (todos.created_at > ? OR "
-    query << "      todos.completed_at > ?) "
-    query << " GROUP BY tags.id, tags.name"
-    query << " ORDER BY count DESC, name"
-    query << " LIMIT 100"
-    @tags_for_cloud_90days = Tag.find_by_sql(
-      [query, current_user.id, @cut_off_3months, @cut_off_3months]
-    ).sort_by { |tag| tag.name.downcase }
-
-    max_90days, @tags_min_90days = 0, 0
-    @tags_for_cloud_90days.each { |t|
-      max_90days = [t.count.to_i, max_90days].max
-      @tags_min_90days = [t.count.to_i, @tags_min_90days].min
-    }
-
-    @tags_divisor_90days = ((max_90days - @tags_min_90days) / levels) + 1
+    @tags_for_cloud_90days  = cloud.tags_for_cloud_90days
+    @tags_min_90days        = cloud.tags_min_90days
+    @tags_divisor_90days    = cloud.tags_divisor_90days
   end
 
   def get_ids_from (actions, week_from, week_to, at_end)
@@ -626,11 +587,11 @@ class StatsController < ApplicationController
     records.each { |r| (yield r).each { |i| a[i] += 1 } }
     return a
   end
-  
+
   def convert_to_months_from_today_array(records, array_size, date_method_on_todo)
     return convert_to_array(records, array_size){ |r| [difference_in_months(@today, r.send(date_method_on_todo))]}
   end
-  
+
   def convert_to_days_from_today_array(records, array_size, date_method_on_todo)
     return convert_to_array(records, array_size){ |r| [difference_in_days(@today, r.send(date_method_on_todo))]}
   end
@@ -646,7 +607,7 @@ class StatsController < ApplicationController
   def convert_to_weeks_running_from_today_array(records, array_size)
     return convert_to_array(records, array_size) { |r| week_indexes_of(r) }
   end
-  
+
   def week_indexes_of(record)
     a = []
     start_week = difference_in_weeks(@today, record.created_at)
@@ -654,7 +615,7 @@ class StatsController < ApplicationController
     end_week.upto(start_week) { |i| a << i };
     return a
   end
-  
+
   # returns a new array containing all elems of array up to cut_off and
   # adds the sum of the rest of array to the last elem
   def cut_off_array_with_sum(array, cut_off)
@@ -664,7 +625,7 @@ class StatsController < ApplicationController
     a[cut_off] += array.inject(:+) - a.inject(:+)
     return a
   end
-  
+
   def cut_off_array(array, cut_off)
     return Array.new(cut_off){|i| array[i]||0}
   end
@@ -687,7 +648,7 @@ class StatsController < ApplicationController
   def difference_in_days(date1, date2)
     return ((date1.utc.at_midnight-date2.utc.at_midnight)/SECONDS_PER_DAY).to_i
   end
-  
+
   # assumes date1 > date2
   def difference_in_weeks(date1, date2)
     return difference_in_days(date1, date2) / 7
@@ -710,7 +671,7 @@ class StatsController < ApplicationController
     avg_done    = Array.new(upper_bound){ |i| three_month_avg(done_array,i) }
     avg_created = Array.new(upper_bound){ |i| three_month_avg(created_array,i) }
     avg_done[0] = avg_created[0] = "null"
-    
+
     return avg_done, avg_created
   end
 
